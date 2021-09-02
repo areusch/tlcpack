@@ -80,6 +80,27 @@ def init_git() {
 }
 
 
+// pack libraries for later use
+def pack_lib(name, libs) {
+  sh """
+     echo "Packing ${libs} into ${name}"
+     echo ${libs} | sed -e 's/,/ /g' | xargs md5sum
+     """
+  stash includes: libs, name: name
+  archive includes: libs
+}
+
+
+// unpack libraries saved before
+def unpack_lib(name, libs) {
+  unstash name
+  sh """
+     echo "Unpacked ${libs} from ${name}"
+     echo ${libs} | sed -e 's/,/ /g' | xargs md5sum
+     """
+}
+
+
 pipeline {
   agent { node { label 'CPU-DOCKER' } }
 
@@ -126,7 +147,7 @@ pipeline {
 
               currentBuild.displayName = "${TVM_CURRENT_SHORT_REF}"
               TVM_DOCKER_TAG = "${TIMESTAMP_TAG}-${TVM_CURRENT_SHORT_REF}"
-              
+
             }
           }
         }
@@ -138,6 +159,51 @@ pipeline {
       } // post
     } // stage: Prepare
 
+    stage('Freeze Dependencies') {
+      parallel {
+        stage('ci-gpu') {
+          agent { node { label 'GPU-DOCKER } }
+          steps {
+            ws(per_exec_ws("tvm/docker-ci-gpu")) {
+              cleanWs();
+              init_git()
+              dir('tvm') {
+                sh "${docker_freeze_deps} ci-gpu docker/freeze-deps/x86_64"
+                pack_lib("freeze-deps-x86_64", "docker/freeze-deps/x86_64*")
+              }
+            }
+          }
+        }
+        stage('ci-arm') {
+          agent { node { label 'ARM-DOCKER } }
+          steps {
+            ws(per_exec_ws("tvm/docker-ci-arm")) {
+              cleanWs();
+              init_git()
+              dir('tvm') {
+                sh "${docker_freeze_deps} ci-arm docker/freeze-deps/aarch64"
+                pack_lib("freeze-deps-aarch64", "docker/freeze-deps/aarch64*")
+              }
+            }
+          }
+        }
+        stage('ci-i386') {
+          agent { node { label 'CPU-DOCKER } }
+          steps {
+            ws(per_exec_ws("tvm/docker-ci-i386")) {
+              cleanWs();
+              init_git()
+              dir('tvm') {
+                sh "${docker_freeze_deps} ci-i386 docker/freeze-deps/i386"
+                pack_lib("freeze-deps-i386", "docker/freeze-deps/i386*")
+              }
+            }
+          }
+        }
+      }
+    }
+
+
     stage('Build') {
       parallel {
 
@@ -147,6 +213,7 @@ pipeline {
             ws(per_exec_ws("tvm/docker-ci-cpu")) {
               cleanWs();
               init_git()
+              unpack_lib("freeze-deps-x86_64")
               dir('tvm'){
                 sh "${docker_build} ci_cpu --tag ${TVM_DOCKER_TAG}"
               }
@@ -169,6 +236,7 @@ pipeline {
             ws(per_exec_ws("tvm/docker-ci-gpu")) {
               cleanWs();
               init_git()
+              unpack_lib("freeze-deps-x86_64")
               dir('tvm'){
                 sh "${docker_build} ci_gpu --tag ${TVM_DOCKER_TAG}"
               }
@@ -191,6 +259,7 @@ pipeline {
             ws(per_exec_ws("tvm/docker-ci-lint")) {
               cleanWs();
               init_git()
+              unpack_lib("freeze-deps-x86_64")
               dir('tvm'){
                 sh "${docker_build} ci_lint --tag ${TVM_DOCKER_TAG}"
               }
@@ -213,6 +282,7 @@ pipeline {
             ws(per_exec_ws("tvm/docker-ci-wasm")) {
               cleanWs();
               init_git()
+              unpack_lib("freeze-deps-x86_64")
               dir('tvm'){
                 sh "${docker_build} ci_wasm --tag ${TVM_DOCKER_TAG}"
               }
@@ -235,6 +305,7 @@ pipeline {
             ws(per_exec_ws("tvm/docker-ci-i386")) {
               cleanWs();
               init_git()
+              unpack_lib("freeze-deps-i386")
               dir('tvm'){
                 sh "${docker_build} ci_i386 --tag ${TVM_DOCKER_TAG}"
               }
@@ -257,6 +328,7 @@ pipeline {
             ws(per_exec_ws("tvm/docker-ci-arm")) {
               cleanWs();
               init_git()
+              unpack_lib("freeze-deps-aarch64")
               dir('tvm'){
                 sh "${docker_build} ci_arm --tag ${TVM_DOCKER_TAG}"
               }
@@ -279,6 +351,7 @@ pipeline {
             ws(per_exec_ws("tvm/docker-ci-qemu")) {
               cleanWs();
               init_git()
+              unpack_lib("freeze-deps-x86_64")
               dir('tvm'){
                 sh "${docker_build} ci_qemu --tag ${TVM_DOCKER_TAG}"
               }
