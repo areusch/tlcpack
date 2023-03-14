@@ -31,9 +31,13 @@ function build_tlcpack_wheel() {
 function audit_tlcpack_wheel() {
     python_version_str=$1
 
+    echo "${TVM_PYTHON_DIR}/dist"
+    ls "${TVM_PYTHON_DIR}/dist"
+    set -x
     cd "${TVM_PYTHON_DIR}" && \
-      mkdir -p repaired_wheel && \
+      mkdir -p repaired_wheels && \
       auditwheel repair ${AUDITWHEEL_OPTS} dist/*cp${python_version_str}*.whl
+    set +x
 }
 
 TVM_PYTHON_DIR="/workspace/tvm/python"
@@ -137,4 +141,3 @@ do
     fi
 
 done
-
